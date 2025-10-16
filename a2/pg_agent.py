@@ -13,6 +13,7 @@ class PGAgent(base_agent.BaseAgent):
 
     def __init__(self, config, env, device):
         super().__init__(config, env, device)
+        torch.autograd.set_detect_anomaly(True)
         return
 
     def _load_params(self, config):
@@ -189,16 +190,28 @@ class PGAgent(base_agent.BaseAgent):
     
 
 
-    def _calc_return(self, r, done):
+    def _calc_return(self, rewards, done):
         '''
         TODO 2.1: Given a tensor of per-timestep rewards (r), and a tensor (done)
         indicating if a timestep is the last timestep of an episode, Output a
         tensor (return_t) containing the return (i.e. reward-to-go) at each timestep.
         '''
-        
-        # placeholder
-        return_t = torch.zeros_like(r)
-        return return_t
+        episode_indices = done.cumsum(dim=0, dtype=torch.int64)
+        episode_indices = torch.cat([torch.zeros(1, dtype=torch.int64), episode_indices[:-1]])
+
+        T = rewards.size(0)
+        exponents = torch.arange(T, dtype=rewards.dtype, device=rewards.device)
+        discounts = self._discount ** exponents
+        discounted = rewards.unsqueeze(1) * discounts.unsqueeze(0)
+
+        reward_to_go = torch.zeros_like(rewards)
+        for i in range(T):
+            episode_mask = episode_indices == episode_indices[i]
+            reward_to_go[i] = (discounted * episode_mask).diagonal(offset=i).sum()
+
+        #print(f"Shape of reward to go: {reward_to_go.shape}")
+
+        return reward_to_go
 
     def _calc_adv(self, norm_obs, ret):
         '''
@@ -206,8 +219,16 @@ class PGAgent(base_agent.BaseAgent):
         every timestep (ret), output the advantage at each timestep (adv).
         '''
         
-        # placeholder
-        adv = torch.zeros_like(ret)
+        #print(f"Shape of norm_obs: {norm_obs.shape}")
+        #print(f"Shape of ret: {ret.shape}")
+
+        values = self._model.eval_critic(norm_obs)
+        #print(f"Shape of values: {values.shape}")
+
+        adv = ret - values[:, 0]
+
+        #print(f"Shape of adv: {adv.shape}")
+        
         return adv
 
     def _calc_critic_loss(self, norm_obs, tar_val):
@@ -217,8 +238,15 @@ class PGAgent(base_agent.BaseAgent):
         function (critic).
         '''
         
-        # placeholder
-        loss = torch.zeros(1, device=self._device)
+        #print(f"Shape of norm_obs: {norm_obs.shape}")
+        #print(f"Shape of tar_val: {tar_val.shape}")
+        
+        predicted_values = self._model.eval_critic(norm_obs)
+        #print(f"Shape of predicted_values: {predicted_values.shape}")
+
+        loss = torch.mean((predicted_values[:, 0] - tar_val) ** 2)
+        #print(f"Shape of loss: {loss.shape}")
+
         return loss
 
     def _calc_actor_loss(self, norm_obs, norm_a, adv):
@@ -228,6 +256,17 @@ class PGAgent(base_agent.BaseAgent):
         a loss for updating the policy (actor).
         '''
         
-        # placeholder
-        loss = torch.zeros(1, device=self._device)
+        #print(f"Shape of norm_obs: {norm_obs.shape}")
+        #print(f"Shape of norm_a: {norm_a.shape}")
+        #print(f"Shape of adv: {adv.shape}")
+
+        #print(norm_a)
+        
+        action_dists = self._model.eval_actor(norm_obs)
+        action_log_probs = action_dists.log_prob(norm_a)
+        #print(f"Shape of action_log_probs: {action_log_probs.shape}")
+
+        loss = -torch.mean(adv.detach() * action_log_probs)
+        #print(f"Shape of loss: {loss.shape}")
+
         return loss

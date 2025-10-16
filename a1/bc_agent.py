@@ -115,20 +115,14 @@ class BCAgent(base_agent.BaseAgent):
         return expert_a
     
     def _decide_action(self, obs, info):
-        '''
-        TODO 1.1: Implement code for sampling from the policy and
-        querying the expert policy for the expert actions.
-        '''
-
         ## a) sample an action from the policy
-        # placeholder
-        a_space = self._env.get_action_space()
-        a = torch.zeros(a_space.shape, device=self._device)
+        norm_obs = self._obs_norm.normalize(obs)
+        a_dist = self._model.eval_actor(norm_obs)
+        norm_a = a_dist.sample()
+        a = self._a_norm.unnormalize(norm_a).detach()
         
         ## b) query the expert for an action
-        # placeholder
-        a_space = self._env.get_action_space()
-        expert_a = torch.zeros(a_space.shape, device=self._device)
+        expert_a = self._eval_expert(obs)
 
         a_info = {
             "expert_a": expert_a
@@ -136,9 +130,7 @@ class BCAgent(base_agent.BaseAgent):
         return a, a_info
     
     def _compute_actor_loss(self, norm_obs, norm_expert_a):
-        '''
-        TODO 1.2: Implement code to calculate the loss for training the policy.
-        '''
-        # placeholder
-        loss = torch.zeros(1, device=self._device)
+        a_dist_batch = self._model.eval_actor(norm_obs)
+        neg_log_likelihood = -a_dist_batch.log_prob(norm_expert_a)
+        loss = neg_log_likelihood.mean()
         return loss

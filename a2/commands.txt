@@ -1,0 +1,3 @@
+python run.py --mode train --env_config data/envs/dm_cheetah.yaml --agent_config a2/dm_cheetah_cem_agent.yaml --log_file output/dm_cheetah_cem_log.txt --out_model_file output/dm_cheetah_cem_model.pt --max_samples 100000000
+
+python run.py --mode train --env_config data/envs/dm_cheetah.yaml --agent_config a2/dm_cheetah_pg_agent.yaml --log_file output_2/dm_cheetah_pg_log.txt --out_model_file output_2/dm_cheetah_pg_model.pt --max_samples 100000000

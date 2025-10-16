@@ -84,8 +84,8 @@ class CEMAgent(base_agent.BaseAgent):
 
         torch.nn.utils.vector_to_parameters(self._best_params, self._model.parameters())
 
-        train_return = np.mean(rets)
-        train_ep_len = np.mean(ep_lens)
+        train_return = torch.tensor(np.mean(rets))
+        train_ep_len = torch.tensor(np.mean(ep_lens))
         num_eps = self._population_size * self._eps_per_candidate
         mean_param_std = torch.mean(new_std)
 
@@ -131,10 +131,13 @@ class CEMAgent(base_agent.BaseAgent):
         containing parameters for each candidate. The tensor should have dimensions
         [n, param_size].
         '''
-        param_size = self._param_mean.shape[0]
 
-        # placeholder
-        candidates = torch.zeros([n, param_size], device=self._device)
+        #print(self._param_mean.shape)
+        #print(self._param_std.shape)
+        
+        candidates = torch.normal(
+            self._param_mean.unsqueeze(0).expand((n, -1)),
+            self._param_std.unsqueeze(0).expand((n, -1)))
 
         return candidates
 
@@ -147,11 +150,27 @@ class CEMAgent(base_agent.BaseAgent):
         Record the average return and average episode length of each candidate
         in the output variables rets and ep_lens.
         '''
-        n = candidates.shape[0]
+        n: int = candidates.shape[0]
 
-        # placeholder
-        rets = torch.zeros(n, dtype=torch.float64, device=self._device)
-        ep_lens = torch.zeros(n, dtype=torch.float64, device=self._device)
+        rets = []
+        ep_lens = []
+
+        for i in range(n):
+            candidate = candidates[i, :]
+
+            #print(candidate.shape)
+            #print(torch.nn.utils.parameters_to_vector(self._model.parameters()).shape)
+
+            torch.nn.utils.vector_to_parameters(candidate, self._model.parameters())
+            rollout_result = self._rollout_test(self._eps_per_candidate)
+            rets.append(rollout_result["mean_return"])
+            ep_lens.append(rollout_result["mean_ep_len"])
+
+        #print(rets)
+        #print(ep_lens)
+
+        rets = torch.tensor(rets)
+        ep_lens = torch.tensor(ep_lens)
 
         return rets, ep_lens
 
@@ -163,9 +182,19 @@ class CEMAgent(base_agent.BaseAgent):
         the new search distribution.
         '''
         param_size = self._param_mean.shape[0]
+        num_candidates = params.shape[0]
+        elite_size = int(num_candidates * self._elite_ratio)
+        #print(f"num_candidates is {num_candidates}")
+        #print(f"elite_size is {elite_size}")
 
-        # placeholder
-        new_mean = torch.zeros(param_size, device=self._device)
-        new_std = torch.ones(param_size, device=self._device)
+        sorted_values, sorted_indices = torch.sort(torch.tensor(rets), descending=True)
+
+        elite_params = params[sorted_indices[:elite_size]]
+
+        new_mean = torch.mean(elite_params, dim=0)
+        #print(new_mean)
+        new_std = torch.std(elite_params, dim=0)
+        new_std = torch.amax(torch.stack([new_std, torch.full_like(new_std, self._min_param_std)]), dim=0)
+        #print(new_std)
 
         return new_mean, new_std
