@@ -211,6 +211,13 @@ class PGAgent(base_agent.BaseAgent):
 
         #print(f"Shape of reward to go: {reward_to_go.shape}")
 
+        #print("Rewards")
+        #print(rewards[:40])
+        #print("Done")
+        #print(done[:40])
+        #print("Reward to Go")
+        #print(reward_to_go[:40])
+
         return reward_to_go
 
     def _calc_adv(self, norm_obs, ret):
@@ -223,13 +230,19 @@ class PGAgent(base_agent.BaseAgent):
         #print(f"Shape of ret: {ret.shape}")
 
         values = self._model.eval_critic(norm_obs)
+        
+        #print("Predicted Values")
+        #print(values[:40])
         #print(f"Shape of values: {values.shape}")
 
         adv = ret - values[:, 0]
+        
+        #print("Adv")
+        #print(adv[:40])
 
         #print(f"Shape of adv: {adv.shape}")
         
-        return adv
+        return adv.detach()
 
     def _calc_critic_loss(self, norm_obs, tar_val):
         '''
@@ -246,6 +259,9 @@ class PGAgent(base_agent.BaseAgent):
 
         loss = torch.mean((predicted_values[:, 0] - tar_val) ** 2)
         #print(f"Shape of loss: {loss.shape}")
+        
+        #print("Critic Loss")
+        #print(loss)
 
         return loss
 
@@ -266,7 +282,10 @@ class PGAgent(base_agent.BaseAgent):
         action_log_probs = action_dists.log_prob(norm_a)
         #print(f"Shape of action_log_probs: {action_log_probs.shape}")
 
-        loss = -torch.mean(adv.detach() * action_log_probs)
+        loss = -torch.mean(adv * action_log_probs)
         #print(f"Shape of loss: {loss.shape}")
+
+        #print("Actor Loss")
+        #print(loss)
 
         return loss
