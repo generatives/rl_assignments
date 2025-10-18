@@ -202,7 +202,7 @@ class PGAgent(base_agent.BaseAgent):
         T = rewards.size(0)
         exponents = torch.arange(T, dtype=rewards.dtype, device=rewards.device)
         discounts = self._discount ** exponents
-        discounted = rewards.unsqueeze(1) * discounts.unsqueeze(0)
+        discounted = rewards.unsqueeze(0) * discounts.unsqueeze(1)
 
         reward_to_go = torch.zeros_like(rewards)
         for i in range(T):
@@ -229,7 +229,7 @@ class PGAgent(base_agent.BaseAgent):
         #print(f"Shape of norm_obs: {norm_obs.shape}")
         #print(f"Shape of ret: {ret.shape}")
 
-        values = self._model.eval_critic(norm_obs)
+        values = self._model.eval_critic(norm_obs).detach()
         
         #print("Predicted Values")
         #print(values[:40])
@@ -242,7 +242,7 @@ class PGAgent(base_agent.BaseAgent):
 
         #print(f"Shape of adv: {adv.shape}")
         
-        return adv.detach()
+        return adv
 
     def _calc_critic_loss(self, norm_obs, tar_val):
         '''
@@ -282,7 +282,10 @@ class PGAgent(base_agent.BaseAgent):
         action_log_probs = action_dists.log_prob(norm_a)
         #print(f"Shape of action_log_probs: {action_log_probs.shape}")
 
-        loss = -torch.mean(adv * action_log_probs)
+        weighted_action_probs = adv * action_log_probs
+        #print(f"Shape of weighted_action_probs: {weighted_action_probs.shape}")
+
+        loss = -torch.mean(weighted_action_probs)
         #print(f"Shape of loss: {loss.shape}")
 
         #print("Actor Loss")
