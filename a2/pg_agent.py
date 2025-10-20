@@ -13,7 +13,8 @@ class PGAgent(base_agent.BaseAgent):
 
     def __init__(self, config, env, device):
         super().__init__(config, env, device)
-        torch.autograd.set_detect_anomaly(True)
+        #torch.autograd.set_detect_anomaly(True)
+        #print(torch.cuda.is_available())
         return
 
     def _load_params(self, config):
@@ -196,18 +197,14 @@ class PGAgent(base_agent.BaseAgent):
         indicating if a timestep is the last timestep of an episode, Output a
         tensor (return_t) containing the return (i.e. reward-to-go) at each timestep.
         '''
-        episode_indices = done.cumsum(dim=0, dtype=torch.int64)
-        episode_indices = torch.cat([torch.zeros(1, dtype=torch.int64), episode_indices[:-1]])
-
-        T = rewards.size(0)
-        exponents = torch.arange(T, dtype=rewards.dtype, device=rewards.device)
-        discounts = self._discount ** exponents
-        discounted = rewards.unsqueeze(0) * discounts.unsqueeze(1)
-
+        reward_count = rewards.size(0)
         reward_to_go = torch.zeros_like(rewards)
-        for i in range(T):
-            episode_mask = episode_indices == episode_indices[i]
-            reward_to_go[i] = (discounted * episode_mask).diagonal(offset=i).sum()
+        accumulator = 0
+        for i in range(1, reward_count + 1):
+            done_flag = done[-i].int()
+            reward = rewards[-i]
+            accumulator = reward + (self._discount * accumulator * (1 - done_flag))
+            reward_to_go[-i] = accumulator
 
         #print(f"Shape of reward to go: {reward_to_go.shape}")
 
