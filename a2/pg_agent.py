@@ -14,7 +14,7 @@ class PGAgent(base_agent.BaseAgent):
     def __init__(self, config, env, device):
         super().__init__(config, env, device)
         #torch.autograd.set_detect_anomaly(True)
-        #print(torch.cuda.is_available())
+        print(f"Using GPU: {torch.cuda.is_available()}")
         return
 
     def _load_params(self, config):
@@ -104,9 +104,11 @@ class PGAgent(base_agent.BaseAgent):
         action = self._exp_buffer.get_data("action")
         norm_action = self._a_norm.normalize(action)
         norm_obs = self._obs_norm.normalize(obs)
+        
+        predicted_values = self._model.eval_critic(norm_obs).detach()[:, 0]
 
-        ret = self._calc_return(r, done)
-        adv = self._calc_adv(norm_obs, ret)
+        #ret = self._calc_return(r, done, predicted_values)
+        adv, ret = self._calc_adv(r, done, predicted_values)
 
         adv_std, adv_mean = torch.std_mean(adv)
         norm_adv = (adv - adv_mean) / torch.clamp_min(adv_std, 1e-5)
@@ -191,7 +193,7 @@ class PGAgent(base_agent.BaseAgent):
     
 
 
-    def _calc_return(self, rewards, done):
+    def _calc_return(self, rewards, done, predicted_values):
         '''
         TODO 2.1: Given a tensor of per-timestep rewards (r), and a tensor (done)
         indicating if a timestep is the last timestep of an episode, Output a
@@ -217,29 +219,33 @@ class PGAgent(base_agent.BaseAgent):
 
         return reward_to_go
 
-    def _calc_adv(self, norm_obs, ret):
+    def _calc_adv(self, rewards, done, predicted_values):
         '''
-        TODO 2.2: Given the normalized observations (norm_obs) and the return at
-        every timestep (ret), output the advantage at each timestep (adv).
+        Given the rewards, predicted values from each state, and done array, calculate advantage and returns.
         '''
-        
-        #print(f"Shape of norm_obs: {norm_obs.shape}")
-        #print(f"Shape of ret: {ret.shape}")
 
-        values = self._model.eval_critic(norm_obs).detach()
-        
-        #print("Predicted Values")
-        #print(values[:40])
-        #print(f"Shape of values: {values.shape}")
+        discount = self._discount
+        lambda_tradeoff = 0.95
 
-        adv = ret - values[:, 0]
-        
-        #print("Adv")
-        #print(adv[:40])
+        T = len(rewards)
+        advantages = torch.zeros(T)
+        last_gae = 0
+        last_state_value = 0
+        for t in reversed(range(T)):
+            done_multiplier = 1 - done[t].int()
+            this_state_value = predicted_values[t]
 
-        #print(f"Shape of adv: {adv.shape}")
-        
-        return adv
+            last_state_value = last_state_value * done_multiplier
+            last_gae = last_gae * done_multiplier
+
+            delta = (rewards[t] + discount * last_state_value) - this_state_value
+            gae = delta + (discount * lambda_tradeoff * last_gae)
+            
+            advantages[t] = last_gae = gae
+            last_state_value = this_state_value
+
+        returns = advantages + predicted_values
+        return advantages, returns
 
     def _calc_critic_loss(self, norm_obs, tar_val):
         '''
