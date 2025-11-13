@@ -128,8 +128,8 @@ class DQNAgent(base_agent.BaseAgent):
         timesteps.
         '''
 
-        # placeholder
-        prob = 1.0
+        l = np.clip(self._sample_count / self._exp_anneal_samples, 0, 1)
+        prob = (1 - l) * self._exp_prob_beg + l * self._exp_prob_end
 
         return prob
 
@@ -142,11 +142,16 @@ class DQNAgent(base_agent.BaseAgent):
         set of possible actions. The output (a) should be a tensor containing the index of the selected
         action.
         '''
-        exp_prob = self._get_exp_prob()
 
-        # placeholder
-        a = torch.zeros(qs.shape[0], device=self._device, dtype=torch.int64)
-        return a
+        # print(qs)
+
+        exp_prob = self._get_exp_prob()
+        random = torch.rand((1,))
+
+        if random[0] > exp_prob:
+            return torch.argmax(qs, dim=1)
+        else:
+            return torch.randint(0, qs.shape[1], (qs.shape[0],))
     
     def _compute_tar_vals(self, r, norm_next_obs, done):
         '''
@@ -157,9 +162,10 @@ class DQNAgent(base_agent.BaseAgent):
         be calculated using the target model (self._tar_model), not the main model (self._model).
         The Q-function can be queried by using the method eval_q(norm_obs).
         '''
-        
-        # placeholder
-        tar_vals = torch.zeros_like(r)
+        qs = self._tar_model.eval_q(norm_next_obs)
+        max_qs, _ = torch.max(qs, dim=1)
+        tar_vals = r + self._discount * (1 - done) * max_qs
+        tar_vals.detach()
 
         return tar_vals
 
@@ -170,9 +176,12 @@ class DQNAgent(base_agent.BaseAgent):
         at each timestep (a), and target values for each timestep (tar_vals). The output (loss)
         should be a scalar tensor containing the loss for updating the Q-function.
         '''
-        
-        # placeholder
-        loss = torch.zeros(1, device=self._device)
+
+        qs = self._model.eval_q(norm_obs)
+        selected_qs = qs[torch.arange(qs.shape[0]), a]
+        err = tar_vals - selected_qs
+        err_squared = torch.pow(err, 2)
+        loss = torch.mean(err_squared)
         
         return loss
     
@@ -183,5 +192,8 @@ class DQNAgent(base_agent.BaseAgent):
         HINT: self._model.parameters() can be used to retrieve a list of tensors containing
         the parameters of a model.
         '''
+
+        for target_param, main_param in zip(self._tar_model.parameters(), self._model.parameters()):
+            target_param.data.copy_(main_param.data)
         
         return
